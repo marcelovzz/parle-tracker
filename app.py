@@ -442,7 +442,7 @@ def get_gemini_api_key() -> Optional[str]:
 
 def parse_caliente_screenshot_with_gemini(image: Image.Image, api_key: str) -> Dict[str, Any]:
     """
-    Usa google-genai (gemini-2.5-flash) para extraer todas las selecciones
+    Usa google-genai (gemini-3.8-flash) para extraer todas las selecciones
     de una captura de pantalla de Caliente.mx.
     """
     from google import genai
@@ -474,7 +474,7 @@ Devuelve exclusivamente un objeto JSON con esta estructura:
 """
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=[image, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -542,7 +542,7 @@ def main() -> None:
     # 1. Panel desplegable para cargar captura de Caliente.mx con Gemini 2.5 Flash
     with st.expander("📸 Cargar captura de Caliente", expanded=False):
         st.caption(
-            "Sube una captura de tu ticket de Caliente.mx para extraer automáticamente las selecciones con `gemini-2.5-flash`."
+            "Sube una captura de tu ticket de Caliente.mx para extraer automáticamente las selecciones con `gemini-3.8-flash`."
         )
         uploaded_file = st.file_uploader(
             "Captura del parlay (PNG, JPG, WEBP)",
