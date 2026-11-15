@@ -1,7 +1,8 @@
 """
 app.py
 Aplicación en Streamlit con estética Dark Mode idéntica a la pestaña "My Action"
-de Action Network para seguir en vivo parlays de Caliente.mx y extraer tickets con Gemini.
+de Action Network para seguir en vivo múltiples parlays activos de Caliente.mx,
+extraer tickets con Gemini y sincronizar automáticamente con GitHub y ntfy.sh.
 """
 
 from __future__ import annotations
@@ -21,7 +22,12 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from espn_live import SUPPORTED_SPORTS, evaluate_selection
-from monitor import NTFY_TOPIC, run_monitor, send_ntfy_notification
+from monitor import (
+    NTFY_TOPIC,
+    normalize_parlays_list,
+    run_monitor,
+    send_ntfy_notification,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 ACTIVE_PARLAY_PATH = BASE_DIR / "active_parlay.json"
@@ -98,7 +104,7 @@ def inject_action_network_css() -> None:
             border-radius: 14px;
             overflow: hidden;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
-            margin-bottom: 18px;
+            margin-bottom: 8px;
         }
         .parlay-card-header {
             padding: 15px 16px 13px 16px;
@@ -116,6 +122,7 @@ def inject_action_network_css() -> None:
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
         }
         .parlay-legs-title {
             font-size: 1.02rem;
@@ -136,6 +143,7 @@ def inject_action_network_css() -> None:
         }
         .parlay-header-right {
             text-align: right;
+            flex-shrink: 0;
         }
         .parlay-wager-label {
             font-size: 0.74rem;
@@ -233,26 +241,6 @@ def inject_action_network_css() -> None:
     )
 
 
-def load_active_parlay() -> Dict[str, Any]:
-    """Carga `active_parlay.json` o devuelve una estructura vacía válida."""
-    default_parlay: Dict[str, Any] = {
-        "wager_mxn": 500.0,
-        "total_odds": "+100",
-        "potential_payout_mxn": 1000.0,
-        "selections": [],
-    }
-    if not ACTIVE_PARLAY_PATH.exists():
-        return default_parlay
-    try:
-        with ACTIVE_PARLAY_PATH.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict) and "selections" in data:
-                return data
-    except Exception:
-        pass
-    return default_parlay
-
-
 def get_secret_or_env(key: str, default: Optional[str] = None) -> Optional[str]:
     """Obtiene una variable desde el entorno o desde `st.secrets`."""
     val = os.getenv(key)
@@ -264,6 +252,37 @@ def get_secret_or_env(key: str, default: Optional[str] = None) -> Optional[str]:
     except Exception:
         pass
     return default
+
+
+def load_active_parlays() -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Carga `active_parlay.json` y garantiza la estructura `{"parlays": [...]}`
+    donde cada elemento tiene `id`, `name`, `stake`, `odds`, `payout` y `legs`.
+    """
+    if not ACTIVE_PARLAY_PATH.exists():
+        return {"parlays": []}
+    try:
+        with ACTIVE_PARLAY_PATH.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+        parlays = normalize_parlays_list(raw)
+        normalized: List[Dict[str, Any]] = []
+        for idx, p in enumerate(parlays):
+            legs = p.get("legs") or p.get("selections") or []
+            normalized.append(
+                {
+                    "id": str(p.get("id") or f"parlay_{idx + 1}_{uuid.uuid4().hex[:4]}"),
+                    "name": str(p.get("name") or f"Parlay #{idx + 1}"),
+                    "stake": float(p.get("stake") or p.get("wager_mxn") or 0.0),
+                    "odds": str(p.get("odds") or p.get("total_odds") or "+100"),
+                    "payout": float(
+                        p.get("payout") or p.get("potential_payout_mxn") or 0.0
+                    ),
+                    "legs": legs,
+                }
+            )
+        return {"parlays": normalized}
+    except Exception:
+        return {"parlays": []}
 
 
 def _github_upsert_file(
@@ -345,7 +364,7 @@ def sync_parlay_to_github(parlay_json_str: str) -> Tuple[bool, str]:
         token=token,
         file_path="last_notified.json",
         content_str="{}\n",
-        commit_message="chore(monitor): reset last_notified.json for new ticket [skip ci]",
+        commit_message="chore(monitor): reset last_notified.json for updated parlays [skip ci]",
         branch=branch,
     )
     if not ok_reset:
@@ -354,16 +373,15 @@ def sync_parlay_to_github(parlay_json_str: str) -> Tuple[bool, str]:
     return True, f"Sincronizado en GitHub ({repo})"
 
 
-def save_active_parlay(parlay_data: Dict[str, Any]) -> None:
+def save_active_parlays(data: Dict[str, List[Dict[str, Any]]]) -> None:
     """
-    Guarda los datos del parlay en `active_parlay.json`, reinicia `last_notified.json`
-    para que `monitor.py` detecte el nuevo ticket y sincroniza ambos archivos en GitHub.
+    Guarda la lista de parlays en `active_parlay.json`, reinicia `last_notified.json`
+    para que `monitor.py` detecte los cambios y sincroniza ambos archivos en GitHub.
     """
-    parlay_json_str = json.dumps(parlay_data, indent=2, ensure_ascii=False) + "\n"
+    parlay_json_str = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     with ACTIVE_PARLAY_PATH.open("w", encoding="utf-8") as f:
         f.write(parlay_json_str)
 
-    # Reiniciar last_notified.json localmente para que monitor.py detecte el nuevo ticket
     try:
         with LAST_NOTIFIED_PATH.open("w", encoding="utf-8") as f:
             f.write("{}\n")
@@ -377,10 +395,7 @@ def save_active_parlay(parlay_data: Dict[str, Any]) -> None:
 def build_leg_svg_ring(status: str, progress_pct: float, logo_url: str) -> str:
     """
     Construye el anillo de progreso SVG circular (44x44px) con el logo oficial
-    del equipo desde el CDN de ESPN en la esquina inferior derecha:
-      - Verde sólido (#10B981) con palomita blanca al ganarse ('won')
-      - Rojo sólido (#EF4444) con una X blanca al perderse ('lost')
-      - Anillo circular dinámico en verde (#10B981) según porcentaje de cobertura en vivo
+    del equipo desde el CDN de ESPN en la esquina inferior derecha.
     """
     safe_logo = html.escape(logo_url or "")
     radius = 18
@@ -405,8 +420,14 @@ def build_leg_svg_ring(status: str, progress_pct: float, logo_url: str) -> str:
     else:
         pct = max(0.0, min(100.0, float(progress_pct or 0.0)))
         offset = circumference * (1.0 - pct / 100.0)
-        stroke_color = "#10B981" if status == "covering" else ("#EF4444" if status == "trailing" else "#374151")
-        inner_text = f"{int(round(pct))}%" if status in ("covering", "trailing") else "—"
+        stroke_color = (
+            "#10B981"
+            if status == "covering"
+            else ("#EF4444" if status == "trailing" else "#374151")
+        )
+        inner_text = (
+            f"{int(round(pct))}%" if status in ("covering", "trailing") else "—"
+        )
         svg = (
             '<svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">'
             '<circle cx="22" cy="22" r="18" stroke="#2A2D3A" stroke-width="3.5" fill="#161820" />'
@@ -429,65 +450,7 @@ def build_leg_svg_ring(status: str, progress_pct: float, logo_url: str) -> str:
 
 def get_gemini_api_key() -> Optional[str]:
     """Obtiene GEMINI_API_KEY de variables de entorno o de st.secrets."""
-    env_key = os.getenv("GEMINI_API_KEY")
-    if env_key:
-        return env_key
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            return str(st.secrets["GEMINI_API_KEY"])
-    except Exception:
-        pass
-    return None
-
-
-def parse_caliente_screenshot_with_gemini(image: Image.Image, api_key: str) -> Dict[str, Any]:
-    """
-    Usa google-genai (gemini-3.8-flash) para extraer todas las selecciones
-    de una captura de pantalla de Caliente.mx.
-    """
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-
-    prompt = """
-Analiza esta captura de pantalla de un ticket/parlay de Caliente.mx y extrae todas las selecciones en formato JSON estricto.
-
-Para cada selección determina:
-- "sport": una de ["basketball/nba", "football/nfl", "baseball/mlb", "hockey/nhl", "soccer/mex.1"]
-- "team": abreviatura oficial de ESPN en mayúsculas (ej. "LAL", "BOS", "KC", "NYK", "AME", "GDL")
-- "opponent": abreviatura oficial de ESPN del equipo rival si aparece, o ""
-- "market_type": exactamente uno de ["moneyline", "spread", "total_over", "total_under", "player_prop"]
-- "line": número flotante con la línea (ej. -5.5, 16.5, 224.5, 250.5) o null si es moneyline
-- "odds": momio americano como string (ej. "-154", "+120", "-111")
-- "player_name": nombre del jugador si market_type == "player_prop", o null
-- "stat_type": si es player_prop, categoría entre ["points", "rebounds", "assists", "threes", "passing_yards", "rushing_yards", "receiving_yards", "receptions", "hits", "strikeouts", "goals", "shots"] o null
-- "label": texto corto estilo Action Network (ej. "LAL -154", "UTA +16.5 -111", "Patrick Mahomes Over 250.5 Pass Yds -115")
-
-Devuelve exclusivamente un objeto JSON con esta estructura:
-{
-  "wager_mxn": 500.0,
-  "total_odds": "+425",
-  "potential_payout_mxn": 2625.0,
-  "selections": [ ... ]
-}
-"""
-
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=[image, prompt],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.1,
-        ),
-    )
-
-    parsed = json.loads(response.text)
-    selections = parsed.get("selections", [])
-    for idx, sel in enumerate(selections):
-        if not sel.get("id"):
-            sel["id"] = f"leg_{idx + 1}_{uuid.uuid4().hex[:6]}"
-    return parsed
+    return get_secret_or_env("GEMINI_API_KEY")
 
 
 def format_pick_title(sel: Dict[str, Any]) -> str:
@@ -515,69 +478,173 @@ def format_pick_title(sel: Dict[str, Any]) -> str:
     return f"{team} {odds}"
 
 
-def main() -> None:
-    inject_action_network_css()
+def parse_caliente_screenshot_with_gemini(
+    image: Image.Image,
+    api_key: str,
+    default_ticket_name: str = "Parlay #1",
+) -> Tuple[Dict[str, Any], str]:
+    """
+    Usa google-genai (`gemini-3.8-flash` con esquema JSON estricto) para extraer
+    todas las selecciones (`legs`) de una captura de pantalla de Caliente.mx.
+    Soporta mercados en español de Caliente.mx: Ganador, Hándicap, Total Más/Menos y Props de jugador.
+    Devuelve `(ticket_dict, raw_json_text)`.
+    """
+    from google import genai
+    from google.genai import types
 
-    # Encabezado superior estilo Action Network
-    st.markdown(
-        """
-        <div class="my-action-topbar">
-            <h1 class="my-action-title">My Action</h1>
-            <span class="live-pill"><span class="live-dot"></span>LIVE · 30S</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    client = genai.Client(api_key=api_key)
+
+    leg_schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "sport": types.Schema(
+                type=types.Type.STRING,
+                description="Liga en formato ESPN: 'basketball/nba', 'football/nfl', 'baseball/mlb', 'hockey/nhl' o 'soccer/mex.1'",
+            ),
+            "team": types.Schema(
+                type=types.Type.STRING,
+                description="Abreviatura oficial de ESPN en mayúsculas del equipo elegido (ej. LAL, BOS, KC, LAR, BAL, CIN, SF, SEA, MIL, LAC, NYK, OKC, AME, GDL)",
+            ),
+            "opponent": types.Schema(
+                type=types.Type.STRING,
+                description="Abreviatura oficial de ESPN del equipo rival si aparece en el partido, o cadena vacía",
+            ),
+            "market_type": types.Schema(
+                type=types.Type.STRING,
+                enum=["moneyline", "spread", "total_over", "total_under", "player_prop"],
+                description="Tipo de mercado normalizado",
+            ),
+            "line": types.Schema(
+                type=types.Type.NUMBER,
+                nullable=True,
+                description="Línea numérica flotante (ej. -5.5, 12.5, 114.5, 250.5) o null si es moneyline",
+            ),
+            "odds": types.Schema(
+                type=types.Type.STRING,
+                description="Momio americano como string (ej. '-154', '+120', '-200')",
+            ),
+            "player_name": types.Schema(
+                type=types.Type.STRING,
+                nullable=True,
+                description="Nombre del jugador si market_type es 'player_prop', o null",
+            ),
+            "stat_type": types.Schema(
+                type=types.Type.STRING,
+                nullable=True,
+                description="Si es player_prop: 'points', 'rebounds', 'assists', 'threes', 'passing_yards', 'rushing_yards', 'receiving_yards', 'receptions', 'hits', 'strikeouts', 'goals' o 'shots'",
+            ),
+            "label": types.Schema(
+                type=types.Type.STRING,
+                description="Etiqueta corta estilo Action Network (ej. 'LAR -500', 'MIL +12.5 -213', 'BOS Over 114.5 -163')",
+            ),
+        },
+        required=["sport", "team", "market_type", "odds", "label"],
     )
 
-    if "last_sync_status" in st.session_state:
-        sync_ok, sync_msg = st.session_state.pop("last_sync_status")
-        if sync_ok:
-            st.toast(f"✅ {sync_msg}")
-        else:
-            st.toast(f"ℹ️ {sync_msg}")
+    parlay_schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "name": types.Schema(
+                type=types.Type.STRING,
+                description="Nombre descriptivo corto del parlay (ej. 'Parlay NFL + NBA')",
+            ),
+            "stake": types.Schema(
+                type=types.Type.NUMBER,
+                nullable=True,
+                description="Monto apostado en MXN (0.0 si no es visible en la captura)",
+            ),
+            "odds": types.Schema(
+                type=types.Type.STRING,
+                nullable=True,
+                description="Momio total del parlay en formato americano (ej. '+1850')",
+            ),
+            "payout": types.Schema(
+                type=types.Type.NUMBER,
+                nullable=True,
+                description="Pago potencial total en MXN (0.0 si no es visible)",
+            ),
+            "legs": types.Schema(
+                type=types.Type.ARRAY,
+                items=leg_schema,
+                description="Lista obligatoria con TODAS las selecciones individuales que aparecen en la captura de Caliente.mx",
+            ),
+        },
+        required=["name", "stake", "odds", "payout", "legs"],
+    )
 
-    parlay_data = load_active_parlay()
-    selections: List[Dict[str, Any]] = parlay_data.get("selections", [])
+    prompt = """
+Analiza esta captura de pantalla de un boleto/parlay de Caliente.mx y extrae TODAS las selecciones individuales dentro de la lista `legs`.
+Es obligatorio que `legs` contenga cada uno de los picks visibles en la imagen (nunca devuelvas `legs` vacío si hay selecciones en la imagen).
 
-    # 1. Panel desplegable para cargar captura de Caliente.mx con Gemini 2.5 Flash
-    with st.expander("📸 Cargar captura de Caliente", expanded=False):
-        st.caption(
-            "Sube una captura de tu ticket de Caliente.mx para extraer automáticamente las selecciones con `gemini-3.8-flash`."
+Mapea los mercados en español de Caliente.mx así:
+- "Ganador del Partido", "Ganador (Incl. Prórroga)", "Ganador", "Resultado Final", "Moneyline", "A Ganar" -> `market_type`: "moneyline", `line`: null
+- "Hándicap", "Hándicap Alternativo", "Spread", "Línea de puntos" (ej. +12.5, -5.5, +5) -> `market_type`: "spread", `line`: valor numérico con su signo (ej. 12.5 o -5.5)
+- "Total de Puntos - Más de", "Más de (Over)", "Total Equipo Más de", "Más de X.5" -> `market_type`: "total_over", `line`: valor numérico (ej. 114.5)
+- "Total de Puntos - Menos de", "Menos de (Under)", "Total Equipo Menos de", "Menos de X.5" -> `market_type`: "total_under", `line`: valor numérico (ej. 220.5)
+- Proposiciones de jugador ("Puntos del jugador", "Rebotes", "Asistencias", "Triples", "Yardas por pase", "Yardas por acarreo", "Recepciones", "Hits", "Ponches") -> `market_type`: "player_prop", `player_name`: nombre del jugador, `line`: línea numérica, `stat_type`: categoría en inglés.
+
+Convierte los nombres de equipos en español/inglés de Caliente.mx a su abreviatura oficial de ESPN en mayúsculas (ej. Los Angeles Rams -> LAR, Baltimore Ravens -> BAL, Cincinnati Bengals -> CIN, San Francisco 49ers -> SF, Seattle Seahawks -> SEA, Boston Celtics -> BOS, Oklahoma City Thunder -> OKC, Milwaukee Bucks -> MIL, LA Clippers -> LAC, New York Knicks -> NYK, Los Angeles Lakers -> LAL, Phoenix Suns -> PHX, Utah Jazz -> UTA).
+"""
+
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=parlay_schema,
+        temperature=0.1,
+    )
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=[image, prompt],
+            config=config,
         )
-        uploaded_file = st.file_uploader(
-            "Captura del parlay (PNG, JPG, WEBP)",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="caliente_uploader",
+    except Exception:
+        # Respaldo automático en caso de que el endpoint requiera gemini-2.5-flash
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[image, prompt],
+            config=config,
         )
-        if uploaded_file is not None:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Ticket cargado", use_container_width=True)
-            if st.button("✨ Extraer selecciones con Gemini", use_container_width=True):
-                api_key = get_gemini_api_key()
-                if not api_key:
-                    st.error(
-                        "Falta `GEMINI_API_KEY`. Configúrala en las variables de entorno o en `.streamlit/secrets.toml`."
-                    )
-                else:
-                    with st.spinner("Analizando captura de Caliente.mx con Gemini 2.5 Flash..."):
-                        try:
-                            extracted = parse_caliente_screenshot_with_gemini(image, api_key)
-                            save_active_parlay(extracted)
-                            st.success(
-                                f"¡Se extrajeron {len(extracted.get('selections', []))} selecciones del ticket!"
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Error al procesar la imagen con Gemini: {exc}")
 
-    # 2. Renderizado de la tarjeta principal del Parlay y evaluación en vivo desde ESPN
-    wager_mxn = float(parlay_data.get("wager_mxn") or 0.0)
-    total_odds = str(parlay_data.get("total_odds") or "+100")
-    potential_payout = float(parlay_data.get("potential_payout_mxn") or 0.0)
-    legs_count = len(selections)
+    raw_text = response.text or "{}"
+    parsed = json.loads(raw_text)
 
-    scoreboard_cache: Dict[str, Dict[str, Any]] = {}
-    legs_html_parts: List[str] = []
+    legs = parsed.get("legs")
+    if not isinstance(legs, list) or not legs:
+        legs = parsed.get("selections") or []
+
+    for idx, sel in enumerate(legs):
+        if not sel.get("id"):
+            sel["id"] = f"leg_{idx + 1}_{uuid.uuid4().hex[:6]}"
+        if not sel.get("label"):
+            sel["label"] = format_pick_title(sel)
+
+    ticket: Dict[str, Any] = {
+        "id": f"parlay_{uuid.uuid4().hex[:8]}",
+        "name": str(default_ticket_name or parsed.get("name") or "Parlay Caliente"),
+        "stake": float(parsed.get("stake") or parsed.get("wager_mxn") or 0.0),
+        "odds": str(parsed.get("odds") or parsed.get("total_odds") or "+100"),
+        "payout": float(
+            parsed.get("payout") or parsed.get("potential_payout_mxn") or 0.0
+        ),
+        "legs": legs,
+    }
+    return ticket, raw_text
+
+
+def render_parlay_card(
+    parlay: Dict[str, Any],
+    scoreboard_cache: Dict[str, Dict[str, Any]],
+) -> None:
+    """Renderiza una tarjeta individual estilo 'My Action' para un parlay."""
+    parlay_name = str(parlay.get("name") or "Parlay")
+    stake_mxn = float(parlay.get("stake") or parlay.get("wager_mxn") or 0.0)
+    total_odds = str(parlay.get("odds") or parlay.get("total_odds") or "+100")
+    potential_payout = float(
+        parlay.get("payout") or parlay.get("potential_payout_mxn") or 0.0
+    )
+    legs: List[Dict[str, Any]] = parlay.get("legs") or parlay.get("selections") or []
+    legs_count = len(legs)
 
     status_labels = {
         "won": ("GANADA", "pill-won"),
@@ -587,7 +654,8 @@ def main() -> None:
         "pending": ("PENDIENTE", "pill-pending"),
     }
 
-    for sel in selections:
+    legs_html_parts: List[str] = []
+    for sel in legs:
         live = evaluate_selection(sel, scoreboard_cache=scoreboard_cache)
         ring_html = build_leg_svg_ring(
             status=live["status"],
@@ -616,7 +684,7 @@ def main() -> None:
         legs_html_parts.append(
             '<div class="leg-row"><div class="leg-details">'
             '<div class="leg-pick-title">Sin selecciones activas</div>'
-            '<div class="leg-score-sub">Carga una captura de Caliente.mx o añade un pick manualmente.</div>'
+            '<div class="leg-score-sub">Añade un pick manualmente desde el panel inferior.</div>'
             "</div></div>"
         )
 
@@ -628,14 +696,14 @@ def main() -> None:
         f'<div class="parlay-card-header">'
         f'<div class="parlay-header-left">'
         f'<div class="parlay-title-row">'
-        f'<span class="parlay-legs-title">{legs_count}-Leg Parlay</span>'
+        f'<span class="parlay-legs-title">{html.escape(parlay_name)} · {legs_count}-Leg</span>'
         f'<span class="parlay-odds-badge">{html.escape(total_odds)}</span>'
         f"</div>"
         f'<div class="parlay-book-sub">Caliente.mx{html.escape(payout_str)}</div>'
         f"</div>"
         f'<div class="parlay-header-right">'
         f'<div class="parlay-wager-label">Apostado</div>'
-        f'<div class="parlay-wager-amount">${wager_mxn:,.2f} MXN</div>'
+        f'<div class="parlay-wager-amount">${stake_mxn:,.2f} MXN</div>'
         f"</div>"
         f"</div>"
         f'{"".join(legs_html_parts)}'
@@ -643,121 +711,313 @@ def main() -> None:
     )
     st.markdown(card_html, unsafe_allow_html=True)
 
-    # 3. Formulario rápido para gestionar selecciones manualmente y limpiar el ticket
-    with st.expander("⚙️ Gestionar selecciones / Añadir pick manual", expanded=False):
-        st.subheader("Encabezado del Ticket")
-        col_w, col_o, col_p = st.columns(3)
-        with col_w:
-            new_wager = st.number_input(
-                "Monto (MXN)", min_value=0.0, value=wager_mxn, step=50.0
-            )
-        with col_o:
-            new_odds = st.text_input("Momio Total", value=total_odds)
-        with col_p:
-            new_payout = st.number_input(
-                "Pago Potencial (MXN)", min_value=0.0, value=potential_payout, step=100.0
-            )
-        if st.button("💾 Actualizar encabezado", use_container_width=True):
-            parlay_data["wager_mxn"] = new_wager
-            parlay_data["total_odds"] = new_odds
-            parlay_data["potential_payout_mxn"] = new_payout
-            save_active_parlay(parlay_data)
-            st.rerun()
 
-        st.divider()
-        st.subheader("Añadir Selección Manual")
-        with st.form("add_manual_leg_form", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                sport_label = st.selectbox("Liga", list(SUPPORTED_SPORTS.keys()))
-            with c2:
-                team_input = st.text_input("Equipo (ESPN Abbr)", placeholder="LAL")
-            with c3:
-                opp_input = st.text_input("Rival (Opcional)", placeholder="PHX")
+def main() -> None:
+    inject_action_network_css()
 
-            c4, c5, c6 = st.columns(3)
-            with c4:
-                market_input = st.selectbox(
-                    "Mercado",
-                    ["moneyline", "spread", "total_over", "total_under", "player_prop"],
-                )
-            with c5:
-                line_input = st.number_input(
-                    "Línea (0 si ML)", value=0.0, step=0.5, format="%.1f"
-                )
-            with c6:
-                odds_input = st.text_input("Momio", value="-110")
+    # Encabezado superior estilo Action Network
+    st.markdown(
+        """
+        <div class="my-action-topbar">
+            <h1 class="my-action-title">My Action</h1>
+            <span class="live-pill"><span class="live-dot"></span>LIVE · 30S</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-            c7, c8 = st.columns(2)
-            with c7:
-                player_input = st.text_input(
-                    "Jugador (solo player_prop)", placeholder="LeBron James"
-                )
-            with c8:
-                stat_input = st.selectbox(
-                    "Estadística (solo player_prop)",
-                    [
-                        "",
-                        "points",
-                        "rebounds",
-                        "assists",
-                        "threes",
-                        "passing_yards",
-                        "rushing_yards",
-                        "receiving_yards",
-                        "receptions",
-                        "hits",
-                        "strikeouts",
-                        "goals",
-                    ],
-                )
+    if "last_sync_status" in st.session_state:
+        sync_ok, sync_msg = st.session_state.pop("last_sync_status")
+        if sync_ok:
+            st.toast(f"✅ {sync_msg}")
+        else:
+            st.toast(f"ℹ️ {sync_msg}")
 
-            submitted = st.form_submit_button("➕ Agregar selección al Parlay", use_container_width=True)
-            if submitted and team_input.strip():
-                sport_code = SUPPORTED_SPORTS[sport_label]
-                team_clean = team_input.strip().upper()
-                opp_clean = opp_input.strip().upper()
-                line_val = None if market_input == "moneyline" else float(line_input)
-                new_leg: Dict[str, Any] = {
-                    "id": f"leg_{uuid.uuid4().hex[:6]}",
-                    "sport": sport_code,
-                    "team": team_clean,
-                    "opponent": opp_clean,
-                    "market_type": market_input,
-                    "line": line_val,
-                    "odds": odds_input.strip() or "-110",
-                    "player_name": player_input.strip() or None,
-                    "stat_type": stat_input or None,
-                }
-                new_leg["label"] = format_pick_title(new_leg)
-                parlay_data.setdefault("selections", []).append(new_leg)
-                save_active_parlay(parlay_data)
+    data = load_active_parlays()
+    parlays: List[Dict[str, Any]] = data.get("parlays", [])
+
+    # 1. Panel desplegable para cargar captura de Caliente.mx y añadir un nuevo ticket
+    with st.expander("📸 Cargar captura de Caliente (Añadir Ticket)", expanded=False):
+        st.caption(
+            "Sube una captura de tu ticket de Caliente.mx para extraer sus selecciones con `gemini-3.8-flash` y añadirlo a tus parlays activos."
+        )
+        default_new_name = f"Parlay #{len(parlays) + 1}"
+        ticket_name_input = st.text_input(
+            "Nombre del Ticket (opcional)",
+            value=default_new_name,
+            key="gemini_ticket_name",
+        )
+        uploaded_file = st.file_uploader(
+            "Captura del parlay (PNG, JPG, WEBP)",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="caliente_uploader",
+        )
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Ticket cargado", use_container_width=True)
+            if st.button("✨ Extraer y añadir Parlay con Gemini", use_container_width=True):
+                api_key = get_gemini_api_key()
+                if not api_key:
+                    st.error(
+                        "Falta `GEMINI_API_KEY`. Configúrala en las variables de entorno o en `.streamlit/secrets.toml`."
+                    )
+                else:
+                    with st.spinner("Analizando captura de Caliente.mx con Gemini..."):
+                        try:
+                            new_ticket, raw_json = parse_caliente_screenshot_with_gemini(
+                                image=image,
+                                api_key=api_key,
+                                default_ticket_name=ticket_name_input.strip() or default_new_name,
+                            )
+                            st.session_state["last_raw_gemini_json"] = raw_json
+                            extracted_legs = new_ticket.get("legs", [])
+                            if not extracted_legs:
+                                st.warning(
+                                    "Gemini procesó la imagen pero la lista `legs` llegó vacía. Revisa el JSON crudo abajo para depurar."
+                                )
+                            else:
+                                parlays.append(new_ticket)
+                                data["parlays"] = parlays
+                                save_active_parlays(data)
+                                st.success(
+                                    f"¡Ticket '{new_ticket['name']}' añadido con {len(extracted_legs)} selecciones!"
+                                )
+                                st.rerun()
+                        except Exception as exc:
+                            st.error(f"Error al procesar la imagen con Gemini: {exc}")
+
+        if st.session_state.get("last_raw_gemini_json"):
+            with st.expander("Ver JSON crudo extraído", expanded=True):
+                st.code(st.session_state["last_raw_gemini_json"], language="json")
+
+    # 2. Renderizado apilado de todas las tarjetas de Parlays activos y botón individual de eliminar
+    scoreboard_cache: Dict[str, Dict[str, Any]] = {}
+
+    if not parlays:
+        st.markdown(
+            '<div class="parlay-card"><div class="leg-row"><div class="leg-details">'
+            '<div class="leg-pick-title">No tienes parlays activos</div>'
+            '<div class="leg-score-sub">Sube una captura de Caliente.mx arriba o crea un ticket manual abajo.</div>'
+            "</div></div></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        for idx, parlay in enumerate(parlays):
+            render_parlay_card(parlay, scoreboard_cache=scoreboard_cache)
+            parlay_id = parlay.get("id") or f"parlay_{idx}"
+            parlay_name = parlay.get("name") or f"Parlay #{idx + 1}"
+            if st.button(
+                f"🗑️ Eliminar ticket ({parlay_name})",
+                key=f"delete_ticket_{parlay_id}_{idx}",
+                use_container_width=True,
+            ):
+                parlays.pop(idx)
+                data["parlays"] = parlays
+                save_active_parlays(data)
                 st.rerun()
 
-        if selections:
-            st.divider()
-            st.subheader("Eliminar Selecciones")
-            for idx, sel in enumerate(selections):
-                rc1, rc2 = st.columns([4, 1])
-                rc1.write(f"**{idx + 1}.** {format_pick_title(sel)} (`{sel.get('sport')}`)")
-                if rc2.button("🗑️", key=f"del_{sel.get('id', idx)}"):
-                    parlay_data["selections"].pop(idx)
-                    save_active_parlay(parlay_data)
+    # 3. Panel para crear un parlay manual o editar / añadir selecciones a un ticket existente
+    with st.expander("⚙️ Crear Parlay manual / Gestionar selecciones", expanded=False):
+        tab_new, tab_edit = st.tabs(["➕ Nuevo Ticket Manual", "✏️ Editar Ticket Existente"])
+
+        with tab_new:
+            with st.form("create_manual_parlay_form", clear_on_submit=True):
+                st.subheader("Crear nuevo ticket de Parlay")
+                nc1, nc2 = st.columns(2)
+                with nc1:
+                    new_t_name = st.text_input(
+                        "Nombre del Ticket", value=f"Parlay #{len(parlays) + 1}"
+                    )
+                    new_t_stake = st.number_input(
+                        "Monto Apostado (MXN)", min_value=0.0, value=500.0, step=50.0
+                    )
+                with nc2:
+                    new_t_odds = st.text_input("Momio Total", value="+100")
+                    new_t_payout = st.number_input(
+                        "Pago Potencial (MXN)", min_value=0.0, value=1000.0, step=100.0
+                    )
+
+                if st.form_submit_button("🎟️ Crear Ticket", use_container_width=True):
+                    created_ticket: Dict[str, Any] = {
+                        "id": f"parlay_{uuid.uuid4().hex[:8]}",
+                        "name": new_t_name.strip() or f"Parlay #{len(parlays) + 1}",
+                        "stake": float(new_t_stake),
+                        "odds": new_t_odds.strip() or "+100",
+                        "payout": float(new_t_payout),
+                        "legs": [],
+                    }
+                    parlays.append(created_ticket)
+                    data["parlays"] = parlays
+                    save_active_parlays(data)
                     st.rerun()
+
+        with tab_edit:
+            if not parlays:
+                st.info("Primero crea un ticket o sube una captura de Caliente.mx.")
+            else:
+                ticket_options = {
+                    f"{i + 1}. {p.get('name', f'Parlay #{i + 1}')} ({len(p.get('legs', []))} picks)": i
+                    for i, p in enumerate(parlays)
+                }
+                selected_label = st.selectbox(
+                    "Selecciona el Parlay a editar", list(ticket_options.keys())
+                )
+                sel_idx = ticket_options[selected_label]
+                target_parlay = parlays[sel_idx]
+
+                st.subheader("Encabezado del Ticket")
+                ec0, ec1, ec2, ec3 = st.columns(4)
+                with ec0:
+                    ed_name = st.text_input(
+                        "Nombre",
+                        value=str(target_parlay.get("name") or ""),
+                        key=f"ed_name_{sel_idx}",
+                    )
+                with ec1:
+                    ed_stake = st.number_input(
+                        "Monto (MXN)",
+                        min_value=0.0,
+                        value=float(target_parlay.get("stake") or 0.0),
+                        step=50.0,
+                        key=f"ed_stake_{sel_idx}",
+                    )
+                with ec2:
+                    ed_odds = st.text_input(
+                        "Momio",
+                        value=str(target_parlay.get("odds") or "+100"),
+                        key=f"ed_odds_{sel_idx}",
+                    )
+                with ec3:
+                    ed_payout = st.number_input(
+                        "Pago (MXN)",
+                        min_value=0.0,
+                        value=float(target_parlay.get("payout") or 0.0),
+                        step=100.0,
+                        key=f"ed_payout_{sel_idx}",
+                    )
+
+                if st.button("💾 Guardar encabezado", use_container_width=True):
+                    target_parlay["name"] = ed_name.strip() or target_parlay["name"]
+                    target_parlay["stake"] = float(ed_stake)
+                    target_parlay["odds"] = ed_odds.strip() or "+100"
+                    target_parlay["payout"] = float(ed_payout)
+                    save_active_parlays(data)
+                    st.rerun()
+
+                st.divider()
+                st.subheader(f"Añadir selección a '{target_parlay.get('name')}'")
+                with st.form(f"add_manual_leg_form_{sel_idx}", clear_on_submit=True):
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        sport_label = st.selectbox("Liga", list(SUPPORTED_SPORTS.keys()))
+                    with c2:
+                        team_input = st.text_input("Equipo (ESPN Abbr)", placeholder="LAL")
+                    with c3:
+                        opp_input = st.text_input("Rival (Opcional)", placeholder="PHX")
+
+                    c4, c5, c6 = st.columns(3)
+                    with c4:
+                        market_input = st.selectbox(
+                            "Mercado",
+                            [
+                                "moneyline",
+                                "spread",
+                                "total_over",
+                                "total_under",
+                                "player_prop",
+                            ],
+                        )
+                    with c5:
+                        line_input = st.number_input(
+                            "Línea (0 si ML)", value=0.0, step=0.5, format="%.1f"
+                        )
+                    with c6:
+                        odds_input = st.text_input("Momio", value="-110")
+
+                    c7, c8 = st.columns(2)
+                    with c7:
+                        player_input = st.text_input(
+                            "Jugador (solo player_prop)", placeholder="LeBron James"
+                        )
+                    with c8:
+                        stat_input = st.selectbox(
+                            "Estadística (solo player_prop)",
+                            [
+                                "",
+                                "points",
+                                "rebounds",
+                                "assists",
+                                "threes",
+                                "passing_yards",
+                                "rushing_yards",
+                                "receiving_yards",
+                                "receptions",
+                                "hits",
+                                "strikeouts",
+                                "goals",
+                            ],
+                        )
+
+                    submitted = st.form_submit_button(
+                        "➕ Agregar selección a este Parlay", use_container_width=True
+                    )
+                    if submitted and team_input.strip():
+                        sport_code = SUPPORTED_SPORTS[sport_label]
+                        team_clean = team_input.strip().upper()
+                        opp_clean = opp_input.strip().upper()
+                        line_val = (
+                            None if market_input == "moneyline" else float(line_input)
+                        )
+                        new_leg: Dict[str, Any] = {
+                            "id": f"leg_{uuid.uuid4().hex[:6]}",
+                            "sport": sport_code,
+                            "team": team_clean,
+                            "opponent": opp_clean,
+                            "market_type": market_input,
+                            "line": line_val,
+                            "odds": odds_input.strip() or "-110",
+                            "player_name": player_input.strip() or None,
+                            "stat_type": stat_input or None,
+                        }
+                        new_leg["label"] = format_pick_title(new_leg)
+                        target_parlay.setdefault("legs", []).append(new_leg)
+                        save_active_parlays(data)
+                        st.rerun()
+
+                target_legs: List[Dict[str, Any]] = target_parlay.get("legs", [])
+                if target_legs:
+                    st.divider()
+                    st.subheader("Eliminar selecciones individuales")
+                    for l_idx, sel in enumerate(target_legs):
+                        rc1, rc2 = st.columns([4, 1])
+                        rc1.write(
+                            f"**{l_idx + 1}.** {format_pick_title(sel)} (`{sel.get('sport')}`)"
+                        )
+                        if rc2.button(
+                            "🗑️",
+                            key=f"del_leg_{target_parlay.get('id')}_{sel.get('id', l_idx)}",
+                        ):
+                            target_parlay["legs"].pop(l_idx)
+                            save_active_parlays(data)
+                            st.rerun()
 
         st.divider()
         col_clear, col_ntfy = st.columns(2)
         with col_clear:
-            if st.button("🧹 Limpiar ticket activo", use_container_width=True):
-                parlay_data["selections"] = []
-                save_active_parlay(parlay_data)
+            if st.button("🧹 Eliminar TODOS los tickets", use_container_width=True):
+                data["parlays"] = []
+                save_active_parlays(data)
                 st.rerun()
         with col_ntfy:
             if st.button("📲 Probar / Sincronizar ntfy.sh", use_container_width=True):
                 run_monitor()
+                total_legs = sum(len(p.get("legs", [])) for p in parlays)
                 ok = send_ntfy_notification(
                     title="My Action · Caliente Tracker",
-                    message=f"Monitoreando {len(selections)} selecciones en vivo (Topic: {NTFY_TOPIC}).",
+                    message=(
+                        f"Monitoreando {len(parlays)} parlays ({total_legs} picks) en vivo "
+                        f"(Topic: {NTFY_TOPIC})."
+                    ),
                     tags=["iphone", "white_check_mark"],
                 )
                 if ok:
