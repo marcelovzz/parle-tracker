@@ -2,42 +2,5 @@
   "wager_mxn": 500.0,
   "total_odds": "+425",
   "potential_payout_mxn": 2625.0,
-  "selections": [
-    {
-      "id": "leg_1",
-      "sport": "basketball/nba",
-      "team": "LAL",
-      "opponent": "PHX",
-      "market_type": "moneyline",
-      "line": null,
-      "odds": "-154",
-      "player_name": null,
-      "stat_type": null,
-      "label": "LAL -154"
-    },
-    {
-      "id": "leg_2",
-      "sport": "basketball/nba",
-      "team": "UTA",
-      "opponent": "BOS",
-      "market_type": "spread",
-      "line": 16.5,
-      "odds": "-111",
-      "player_name": null,
-      "stat_type": null,
-      "label": "UTA +16.5 -111"
-    },
-    {
-      "id": "leg_3",
-      "sport": "football/nfl",
-      "team": "KC",
-      "opponent": "BUF",
-      "market_type": "player_prop",
-      "line": 250.5,
-      "odds": "-115",
-      "player_name": "Patrick Mahomes",
-      "stat_type": "passing_yards",
-      "label": "Patrick Mahomes Over 250.5 Pass Yds -115"
-    }
-  ]
+  "selections": []
 }
