@@ -3,9 +3,9 @@
     {
       "id": "parlay_1",
       "name": "Parlay #1 (NFL + NBA)",
-      "stake": 500.0,
-      "odds": "+1850",
-      "payout": 9750.0,
+      "stake": 15.0,
+      "odds": "+4500",
+      "payout": 700.0,
       "legs": [
         {
           "id": "leg_1_3ea1b3",
