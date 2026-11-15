@@ -1,6 +1,127 @@
 {
-  "wager_mxn": 500.0,
-  "total_odds": "+425",
-  "potential_payout_mxn": 2625.0,
-  "selections": []
+  "wager_mxn": null,
+  "total_odds": null,
+  "potential_payout_mxn": null,
+  "selections": [
+    {
+      "sport": "football/nfl",
+      "team": "LAR",
+      "opponent": "ARI",
+      "market_type": "moneyline",
+      "line": null,
+      "odds": "-500",
+      "player_name": null,
+      "stat_type": null,
+      "label": "LAR -500",
+      "id": "leg_1_ea6a24"
+    },
+    {
+      "sport": "football/nfl",
+      "team": "BAL",
+      "opponent": "LAC",
+      "market_type": "moneyline",
+      "line": null,
+      "odds": "-223",
+      "player_name": null,
+      "stat_type": null,
+      "label": "BAL -223",
+      "id": "leg_2_e03eb4"
+    },
+    {
+      "sport": "football/nfl",
+      "team": "CIN",
+      "opponent": "PIT",
+      "market_type": "moneyline",
+      "line": null,
+      "odds": "-200",
+      "player_name": null,
+      "stat_type": null,
+      "label": "CIN -200",
+      "id": "leg_3_fbbf7c"
+    },
+    {
+      "sport": "football/nfl",
+      "team": "SF",
+      "opponent": "DAL",
+      "market_type": "moneyline",
+      "line": null,
+      "odds": "-200",
+      "player_name": null,
+      "stat_type": null,
+      "label": "SF -200",
+      "id": "leg_4_569c0a"
+    },
+    {
+      "sport": "football/nfl",
+      "team": "SEA",
+      "opponent": "LV",
+      "market_type": "moneyline",
+      "line": null,
+      "odds": "-286",
+      "player_name": null,
+      "stat_type": null,
+      "label": "SEA -286",
+      "id": "leg_5_106409"
+    },
+    {
+      "sport": "basketball/nba",
+      "team": "BOS",
+      "opponent": "DAL",
+      "market_type": "total_over",
+      "line": 114.5,
+      "odds": "-163",
+      "player_name": null,
+      "stat_type": null,
+      "label": "BOS Over 114.5 -163",
+      "id": "leg_6_694455"
+    },
+    {
+      "sport": "basketball/nba",
+      "team": "OKC",
+      "opponent": "SAC",
+      "market_type": "total_over",
+      "line": 114.5,
+      "odds": "-167",
+      "player_name": null,
+      "stat_type": null,
+      "label": "OKC Over 114.5 -167",
+      "id": "leg_7_2fbdb4"
+    },
+    {
+      "sport": "basketball/nba",
+      "team": "MIL",
+      "opponent": "ATL",
+      "market_type": "spread",
+      "line": 12.5,
+      "odds": "-213",
+      "player_name": null,
+      "stat_type": null,
+      "label": "MIL +12.5 -213",
+      "id": "leg_8_35b1a5"
+    },
+    {
+      "sport": "basketball/nba",
+      "team": "LAC",
+      "opponent": "CHA",
+      "market_type": "spread",
+      "line": 5.0,
+      "odds": "-228",
+      "player_name": null,
+      "stat_type": null,
+      "label": "LAC +5 -228",
+      "id": "leg_9_82a0c0"
+    },
+    {
+      "sport": "basketball/nba",
+      "team": "NYK",
+      "opponent": "TOR",
+      "market_type": "total_over",
+      "line": 109.5,
+      "odds": "-163",
+      "player_name": null,
+      "stat_type": null,
+      "label": "NYK Over 109.5 -163",
+      "id": "leg_10_c12c21"
+    }
+  ]
 }
