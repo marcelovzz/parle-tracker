@@ -13,7 +13,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "LAR -500",
-      "id": "leg_1_ea6a24"
+      "id": "leg_1_62ff4e"
     },
     {
       "sport": "football/nfl",
@@ -25,7 +25,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "BAL -223",
-      "id": "leg_2_e03eb4"
+      "id": "leg_2_b990b1"
     },
     {
       "sport": "football/nfl",
@@ -37,7 +37,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "CIN -200",
-      "id": "leg_3_fbbf7c"
+      "id": "leg_3_beda70"
     },
     {
       "sport": "football/nfl",
@@ -49,7 +49,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "SF -200",
-      "id": "leg_4_569c0a"
+      "id": "leg_4_cc6eba"
     },
     {
       "sport": "football/nfl",
@@ -61,7 +61,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "SEA -286",
-      "id": "leg_5_106409"
+      "id": "leg_5_7ca12f"
     },
     {
       "sport": "basketball/nba",
@@ -73,7 +73,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "BOS Over 114.5 -163",
-      "id": "leg_6_694455"
+      "id": "leg_6_2fb323"
     },
     {
       "sport": "basketball/nba",
@@ -85,7 +85,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "OKC Over 114.5 -167",
-      "id": "leg_7_2fbdb4"
+      "id": "leg_7_c3eebe"
     },
     {
       "sport": "basketball/nba",
@@ -97,7 +97,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "MIL +12.5 -213",
-      "id": "leg_8_35b1a5"
+      "id": "leg_8_cdc5a9"
     },
     {
       "sport": "basketball/nba",
@@ -109,7 +109,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "LAC +5 -228",
-      "id": "leg_9_82a0c0"
+      "id": "leg_9_a8b62f"
     },
     {
       "sport": "basketball/nba",
@@ -121,7 +121,7 @@
       "player_name": null,
       "stat_type": null,
       "label": "NYK Over 109.5 -163",
-      "id": "leg_10_c12c21"
+      "id": "leg_10_885a01"
     }
   ]
 }
