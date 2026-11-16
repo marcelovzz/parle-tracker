@@ -448,10 +448,10 @@ def save_active_parlay(
 save_active_parlays = save_active_parlay
 
 
-def compress_image_for_gemini(image: Image.Image, max_width: int = 1080, quality: int = 80) -> Image.Image:
+def compress_image_for_gemini(image: Image.Image, max_width: int = 800, quality: int = 75) -> Image.Image:
     """
-    Redimensiona la captura a máximo `max_width` (1080px) de ancho manteniendo proporción
-    y la comprime a JPEG (calidad 80) en memoria antes de enviarla a Gemini.
+    Redimensiona la captura a máximo `max_width` (800px) de ancho manteniendo proporción
+    y la comprime a JPEG (calidad 75) en memoria antes de enviarla a Gemini.
     """
     rgb_img = image.convert("RGB")
     if rgb_img.width > max_width:
@@ -560,18 +560,18 @@ def parse_caliente_screenshot_with_gemini(
     default_ticket_name: str = "Parlay #1",
 ) -> Tuple[Dict[str, Any], str]:
     """
-    Comprime la imagen a máx 1080px JPEG (calidad 80) y usa google-genai (`gemini-3.8-flash`)
-    con `http_options={'timeout': 25.0}` y `automatic_function_calling` desactivado
-    para extraer todas las selecciones (`legs`) de una captura de Caliente.mx.
+    Comprime la imagen a máx 800px JPEG (calidad 75) y usa únicamente `gemini-3.8-flash`
+    con `automatic_function_calling` desactivado para extraer las selecciones (`legs`).
     """
     from google import genai
     from google.genai import types
 
-    compressed_image = compress_image_for_gemini(image, max_width=1080, quality=80)
+    compressed_image = compress_image_for_gemini(image, max_width=800, quality=75)
 
-    client = genai.Client(api_key=api_key, http_options={"timeout": 60.0})
-    # Cliente de respaldo con timeout en milisegundos (60,000 ms = 60s) para versiones de google-genai que dividen entre 1000
-    fallback_client = genai.Client(api_key=api_key, http_options={"timeout": 60000})
+    client = genai.Client(
+        api_key=api_key,
+        http_options={"timeout": 45000, "client_args": {"timeout": 45.0}},
+    )
 
     leg_schema = types.Schema(
         type=types.Type.OBJECT,
@@ -665,53 +665,18 @@ Mapea los mercados en español de Caliente.mx así:
 Convierte los nombres de equipos en español/inglés de Caliente.mx a su abreviatura oficial de ESPN en mayúsculas (ej. Los Angeles Rams -> LAR, Baltimore Ravens -> BAL, Cincinnati Bengals -> CIN, San Francisco 49ers -> SF, Seattle Seahawks -> SEA, Boston Celtics -> BOS, Oklahoma City Thunder -> OKC, Milwaukee Bucks -> MIL, LA Clippers -> LAC, New York Knicks -> NYK, Los Angeles Lakers -> LAL, Phoenix Suns -> PHX, Utah Jazz -> UTA).
 """
 
-    config_with_thinking_off = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=parlay_schema,
-        temperature=0.1,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
-    )
-    config_basic = types.GenerateContentConfig(
+    config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=parlay_schema,
         temperature=0.1,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
-    response = None
-    last_error: Optional[Exception] = None
-    candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
-
-    for model_name in candidate_models:
-        cfg = (
-            config_basic
-            if model_name.startswith("gemini-2.0")
-            else config_with_thinking_off
-        )
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[compressed_image, prompt],
-                config=cfg,
-            )
-            break
-        except Exception as err_primary:
-            last_error = err_primary
-            # Si fue ReadTimeout inmediato por unidades de timeout en ms, reintentar con fallback_client (60000 ms)
-            try:
-                response = fallback_client.models.generate_content(
-                    model=model_name,
-                    contents=[compressed_image, prompt],
-                    config=cfg,
-                )
-                break
-            except Exception as err_fallback:
-                last_error = err_fallback
-                continue
-
-    if response is None and last_error is not None:
-        raise last_error
+    response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=[compressed_image, prompt],
+        config=config,
+    )
 
     raw_text = response.text or "{}"
     st.session_state["last_raw_gemini_json"] = raw_text
@@ -898,7 +863,7 @@ def main() -> None:
                             import traceback as tb
 
                             tb.print_exc()
-                            st.error(f"Fallo exacto: {type(e).__name__} - {e}")
+                            st.error(f"Error Gemini: {type(e).__name__} - {e}")
                             if st.session_state.get("last_raw_gemini_json"):
                                 st.code(
                                     st.session_state["last_raw_gemini_json"],
