@@ -25,12 +25,12 @@
     "parlay_id": "parlay_1",
     "parlay_name": "Parlay #1 (NFL + NBA)",
     "label": "CIN -200",
-    "state": "in",
-    "status": "covering",
-    "score_text": "CIN 17 - 0 PIT · 1:29 - 2nd",
-    "current_value": 17.0,
+    "state": "post",
+    "status": "won",
+    "score_text": "CIN 38 - 18 PIT · Final",
+    "current_value": 38.0,
     "milestone": 0,
-    "final_notified": false
+    "final_notified": true
   },
   "parlay_1:leg_4_99b4b6": {
     "parlay_id": "parlay_1",
@@ -69,23 +69,23 @@
     "parlay_id": "parlay_1",
     "parlay_name": "Parlay #1 (NFL + NBA)",
     "label": "OKC Over 114.5 -167",
-    "state": "in",
-    "status": "trailing",
-    "score_text": "OKC 37 - 36 SAC · 9:05 - 2nd (Total: 73/114.5)",
-    "current_value": 73.0,
+    "state": "post",
+    "status": "won",
+    "score_text": "OKC 125 - 103 SAC · Final (Total: 228/114.5)",
+    "current_value": 228.0,
     "milestone": 0,
-    "final_notified": false
+    "final_notified": true
   },
   "parlay_1:leg_8_a00d05": {
     "parlay_id": "parlay_1",
     "parlay_name": "Parlay #1 (NFL + NBA)",
     "label": "MIL +12.5 -213",
-    "state": "in",
-    "status": "covering",
-    "score_text": "MIL 73 - 78 ATL · 2:46 - 3rd",
-    "current_value": 73.0,
+    "state": "post",
+    "status": "won",
+    "score_text": "MIL 106 - 113 ATL · Final",
+    "current_value": 106.0,
     "milestone": 0,
-    "final_notified": false
+    "final_notified": true
   },
   "parlay_1:leg_9_aaa688": {
     "parlay_id": "parlay_1",
