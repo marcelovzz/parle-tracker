@@ -51,32 +51,53 @@ def save_json_file(path: Path, data: Any) -> None:
         logger.error("Error guardando %s: %s", path, exc)
 
 
-def normalize_parlays_list(raw_data: Any) -> List[Dict[str, Any]]:
+def migrate_to_parlays_dict(raw_data: Any) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Normaliza el contenido de `active_parlay.json` para devolver siempre
-    una lista de tickets `[{'id', 'name', 'stake', 'odds', 'payout', 'legs'}, ...]`.
-    Soporta retrocompatibilidad con el formato antiguo de un solo ticket.
+    Si el archivo existente en GitHub o local tiene el formato anterior
+    (un solo diccionario sin la llave 'parlays'), migra automáticamente ese ticket
+    dentro de `{"parlays": [...]}` para evitar cualquier KeyError.
     """
-    if not isinstance(raw_data, dict):
-        return []
-    if isinstance(raw_data.get("parlays"), list):
-        return raw_data["parlays"]
-    # Retrocompatibilidad si aún tiene 'selections' o 'legs' en la raíz
-    legacy_legs = raw_data.get("legs") or raw_data.get("selections") or []
-    if legacy_legs:
-        return [
+    if isinstance(raw_data, list):
+        parlays_raw = raw_data
+    elif isinstance(raw_data, dict):
+        if "parlays" in raw_data and isinstance(raw_data["parlays"], list):
+            parlays_raw = raw_data["parlays"]
+        else:
+            legacy_legs = raw_data.get("legs")
+            if not isinstance(legacy_legs, list):
+                legacy_legs = raw_data.get("selections")
+            if isinstance(legacy_legs, list) and legacy_legs:
+                parlays_raw = [raw_data]
+            else:
+                parlays_raw = []
+    else:
+        parlays_raw = []
+
+    normalized: List[Dict[str, Any]] = []
+    for idx, item in enumerate(parlays_raw):
+        if not isinstance(item, dict):
+            continue
+        legs = item.get("legs")
+        if not isinstance(legs, list):
+            legs = item.get("selections") if isinstance(item.get("selections"), list) else []
+        normalized.append(
             {
-                "id": str(raw_data.get("id") or "parlay_1"),
-                "name": str(raw_data.get("name") or "Parlay #1"),
-                "stake": float(raw_data.get("stake") or raw_data.get("wager_mxn") or 0.0),
-                "odds": str(raw_data.get("odds") or raw_data.get("total_odds") or "+100"),
+                "id": str(item.get("id") or f"parlay_{idx + 1}"),
+                "name": str(item.get("name") or f"Parlay #{idx + 1}"),
+                "stake": float(item.get("stake") or item.get("wager_mxn") or 0.0),
+                "odds": str(item.get("odds") or item.get("total_odds") or "+100"),
                 "payout": float(
-                    raw_data.get("payout") or raw_data.get("potential_payout_mxn") or 0.0
+                    item.get("payout") or item.get("potential_payout_mxn") or 0.0
                 ),
-                "legs": legacy_legs,
+                "legs": legs,
             }
-        ]
-    return []
+        )
+    return {"parlays": normalized}
+
+
+def normalize_parlays_list(raw_data: Any) -> List[Dict[str, Any]]:
+    """Devuelve la lista normalizada de parlays desde cualquier estructura."""
+    return migrate_to_parlays_dict(raw_data)["parlays"]
 
 
 def send_ntfy_notification(
@@ -111,10 +132,7 @@ def send_ntfy_notification(
 def run_monitor() -> Dict[str, Any]:
     """
     Recorre todos los parlays activos en `active_parlay.json`, compara con `last_notified.json`
-    y dispara notificaciones push indicando el nombre del ticket en el título cuando:
-      1. Cambia el marcador en un partido activo (indicando si va cubriendo o abajo).
-      2. Un player prop supera un hito (25%, 50%, 75%, 100%) o se cumple.
-      3. Termina un partido y la selección se marca como ganada (white_check_mark) o perdida (x).
+    y dispara notificaciones push indicando el nombre del ticket en el título.
     """
     raw_data = load_json_file(ACTIVE_PARLAY_PATH, {"parlays": []})
     parlays = normalize_parlays_list(raw_data)
@@ -149,7 +167,6 @@ def run_monitor() -> Dict[str, Any]:
             is_covering = live_info["is_covering"]
             current_val = float(live_info["current_value"])
 
-            # Soporta buscar tanto por state_key nuevo como por leg_id legado
             prev = last_notified.get(state_key) or last_notified.get(leg_id) or {}
             prev_score_text = prev.get("score_text", "")
             prev_milestone = int(prev.get("milestone", 0))
