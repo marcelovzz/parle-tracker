@@ -13,6 +13,7 @@ import io
 import json
 import math
 import os
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -672,11 +673,32 @@ Convierte los nombres de equipos en español/inglés de Caliente.mx a su abrevia
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=[compressed_image, prompt],
-        config=config,
-    )
+    response = None
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=[compressed_image, prompt],
+                config=config,
+            )
+            break
+        except Exception as exc:
+            err_text = str(exc).upper()
+            status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            is_retryable = (
+                type(exc).__name__ == "ServerError"
+                or status_code in (503, 429)
+                or "503" in err_text
+                or "429" in err_text
+                or "UNAVAILABLE" in err_text
+                or "RESOURCE_EXHAUSTED" in err_text
+            )
+            if is_retryable and attempt < max_attempts:
+                st.info("Servidores de Gemini saturados, reintentando...")
+                time.sleep(2)
+                continue
+            raise
 
     raw_text = response.text or "{}"
     st.session_state["last_raw_gemini_json"] = raw_text
