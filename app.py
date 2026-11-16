@@ -569,7 +569,9 @@ def parse_caliente_screenshot_with_gemini(
 
     compressed_image = compress_image_for_gemini(image, max_width=1080, quality=80)
 
-    client = genai.Client(api_key=api_key, http_options={"timeout": 25.0})
+    client = genai.Client(api_key=api_key, http_options={"timeout": 60.0})
+    # Cliente de respaldo con timeout en milisegundos (60,000 ms = 60s) para versiones de google-genai que dividen entre 1000
+    fallback_client = genai.Client(api_key=api_key, http_options={"timeout": 60000})
 
     leg_schema = types.Schema(
         type=types.Type.OBJECT,
@@ -663,18 +665,53 @@ Mapea los mercados en español de Caliente.mx así:
 Convierte los nombres de equipos en español/inglés de Caliente.mx a su abreviatura oficial de ESPN en mayúsculas (ej. Los Angeles Rams -> LAR, Baltimore Ravens -> BAL, Cincinnati Bengals -> CIN, San Francisco 49ers -> SF, Seattle Seahawks -> SEA, Boston Celtics -> BOS, Oklahoma City Thunder -> OKC, Milwaukee Bucks -> MIL, LA Clippers -> LAC, New York Knicks -> NYK, Los Angeles Lakers -> LAL, Phoenix Suns -> PHX, Utah Jazz -> UTA).
 """
 
-    config = types.GenerateContentConfig(
+    config_with_thinking_off = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=parlay_schema,
+        temperature=0.1,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
+    config_basic = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=parlay_schema,
         temperature=0.1,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=[compressed_image, prompt],
-        config=config,
-    )
+    response = None
+    last_error: Optional[Exception] = None
+    candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+
+    for model_name in candidate_models:
+        cfg = (
+            config_basic
+            if model_name.startswith("gemini-2.0")
+            else config_with_thinking_off
+        )
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[compressed_image, prompt],
+                config=cfg,
+            )
+            break
+        except Exception as err_primary:
+            last_error = err_primary
+            # Si fue ReadTimeout inmediato por unidades de timeout en ms, reintentar con fallback_client (60000 ms)
+            try:
+                response = fallback_client.models.generate_content(
+                    model=model_name,
+                    contents=[compressed_image, prompt],
+                    config=cfg,
+                )
+                break
+            except Exception as err_fallback:
+                last_error = err_fallback
+                continue
+
+    if response is None and last_error is not None:
+        raise last_error
 
     raw_text = response.text or "{}"
     st.session_state["last_raw_gemini_json"] = raw_text
