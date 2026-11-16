@@ -128,14 +128,6 @@
           "label": "NYK Over 109.5 -163"
         }
       ]
-    },
-    {
-      "id": "parlay_ebe19230",
-      "name": "Parlay #2",
-      "stake": 500.0,
-      "odds": "+100",
-      "payout": 1000.0,
-      "legs": []
     }
   ]
 }
