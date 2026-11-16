@@ -1,1 +1,112 @@
-{}
+{
+  "parlay_1:leg_1_3ea1b3": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "LAR -500",
+    "state": "post",
+    "status": "won",
+    "score_text": "LAR 34 - 6 ARI · Final",
+    "current_value": 34.0,
+    "milestone": 0,
+    "final_notified": true
+  },
+  "parlay_1:leg_2_3c6ce8": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "BAL -223",
+    "state": "pre",
+    "status": "pending",
+    "score_text": "BAL vs LAC · 11/16 - 8:15 PM EST",
+    "current_value": 0.0,
+    "milestone": 0,
+    "final_notified": false
+  },
+  "parlay_1:leg_3_e61bac": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "CIN -200",
+    "state": "in",
+    "status": "covering",
+    "score_text": "CIN 17 - 0 PIT · 1:29 - 2nd",
+    "current_value": 17.0,
+    "milestone": 0,
+    "final_notified": false
+  },
+  "parlay_1:leg_4_99b4b6": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "SF -200",
+    "state": "post",
+    "status": "won",
+    "score_text": "SF 46 - 40 DAL · Final",
+    "current_value": 46.0,
+    "milestone": 0,
+    "final_notified": true
+  },
+  "parlay_1:leg_5_b7fc33": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "SEA -286",
+    "state": "post",
+    "status": "won",
+    "score_text": "SEA 21 - 13 LV · Final",
+    "current_value": 21.0,
+    "milestone": 0,
+    "final_notified": true
+  },
+  "parlay_1:leg_6_7d1439": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "BOS Over 114.5 -163",
+    "state": "post",
+    "status": "won",
+    "score_text": "BOS 131 - 94 DAL · Final (Total: 225/114.5)",
+    "current_value": 225.0,
+    "milestone": 0,
+    "final_notified": true
+  },
+  "parlay_1:leg_7_18f763": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "OKC Over 114.5 -167",
+    "state": "in",
+    "status": "trailing",
+    "score_text": "OKC 37 - 36 SAC · 9:05 - 2nd (Total: 73/114.5)",
+    "current_value": 73.0,
+    "milestone": 0,
+    "final_notified": false
+  },
+  "parlay_1:leg_8_a00d05": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "MIL +12.5 -213",
+    "state": "in",
+    "status": "covering",
+    "score_text": "MIL 73 - 78 ATL · 2:46 - 3rd",
+    "current_value": 73.0,
+    "milestone": 0,
+    "final_notified": false
+  },
+  "parlay_1:leg_9_aaa688": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "LAC +5 -228",
+    "state": "post",
+    "status": "won",
+    "score_text": "LAC 113 - 105 CHA · Final",
+    "current_value": 113.0,
+    "milestone": 0,
+    "final_notified": true
+  },
+  "parlay_1:leg_10_5a11e5": {
+    "parlay_id": "parlay_1",
+    "parlay_name": "Parlay #1 (NFL + NBA)",
+    "label": "NYK Over 109.5 -163",
+    "state": "post",
+    "status": "won",
+    "score_text": "TOR 108 - 112 NY · Final/OT (Total: 220/109.5)",
+    "current_value": 220.0,
+    "milestone": 0,
+    "final_notified": true
+  }
+}
